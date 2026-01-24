@@ -39,10 +39,10 @@ type line struct {
 
 // locationInfo is a helper struct for the locations table.
 type locationInfo struct {
-	mappingIdx       int32
-	address          uint64
-	lines            []line
-	attributeIndices []int32
+	// mappingIdx       int32 - not used atm
+	address uint64
+	lines   []line
+	// attributeIndices []int32 - not used atm
 	locationTableIdx int32
 }
 
