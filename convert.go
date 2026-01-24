@@ -34,7 +34,7 @@ func convert(ctx context.Context, f io.Reader) (pprofile.Profiles, error) {
 	currentScopeProfile.SetSchemaUrl(semconv.SchemaURL)
 	currentProfile := currentScopeProfile.Profiles().AppendEmpty()
 
-	//TODO: move LocationTable to lookupTable
+	// TODO: move LocationTable to lookupTable
 	profiles.Dictionary().LocationTable().AppendEmpty()
 
 	initializeProfile(lt, currentProfile)
