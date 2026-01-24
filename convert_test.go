@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 func primeFactors(t *testing.T, n int) []int {
@@ -75,7 +77,9 @@ func TestConvert(t *testing.T) {
 	f, cleanup := generateFlightrecord(t)
 	defer cleanup()
 
-	p, err := convert(t.Context(), f)
+	logger := zap.NewNop()
+
+	p, err := convert(t.Context(), logger, f)
 	if err != nil {
 		t.Fatal(err)
 	}

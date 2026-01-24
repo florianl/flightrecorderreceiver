@@ -33,7 +33,7 @@ func (s *frScraper) scrape(ctx context.Context) (pprofile.Profiles, error) {
 			scrapeErrors = append(scrapeErrors, err)
 			continue
 		}
-		newProfile, convertErr := convert(ctx, f)
+		newProfile, convertErr := convert(ctx, s.logger, f)
 		if convertErr != nil {
 			scrapeErrors = append(scrapeErrors, convertErr)
 			f.Close()
