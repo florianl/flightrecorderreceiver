@@ -25,7 +25,7 @@ func (s *frScraper) scrape(ctx context.Context) (pprofile.Profiles, error) {
 	}
 
 	var scrapeErrors []error
-	var profiles pprofile.Profiles
+	profiles := pprofile.NewProfiles()
 
 	for _, match := range matches {
 		f, err := os.Open(match)
