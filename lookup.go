@@ -4,6 +4,7 @@ import (
 	"unsafe"
 
 	"github.com/zeebo/xxh3"
+	"golang.org/x/exp/trace"
 )
 
 // fn is a helper struct for the functions table.
@@ -24,25 +25,43 @@ type kvu struct {
 	value string
 }
 
-// stackinfo is a helper struct for the stacks table.
-type stackinfo struct {
+// stackInfo is a helper struct for the stacks table.
+type stackInfo struct {
 	locationIndices []int32
 	stackTableIdx   int32
 }
 
+type line struct {
+	functionIdx int32
+	line        int64
+	column      int64
+}
+
+// locationInfo is a helper struct for the locations table.
+type locationInfo struct {
+	mappingIdx       int32
+	address          uint64
+	lines            []line
+	attributeIndices []int32
+	locationTableIdx int32
+}
+
 type lookupTable struct {
 	// mappings - currently not used
-	// location - TODO
+	locations map[uint64]locationInfo
 	functions map[fn]int32
 	// links - currently not used
 	strings    map[string]int32
 	attributes map[kvu]int32
-	stacks     map[uint64]stackinfo
+	stacks     map[uint64]stackInfo
 }
 
 func createLookupTable() lookupTable {
 	// By convention, all tables in the dictionary hold
 	// an empty element as their first element.
+	locations := make(map[uint64]locationInfo)
+	locations[0] = locationInfo{locationTableIdx: 0}
+
 	functions := make(map[fn]int32)
 	functions[fn{}] = 0
 
@@ -52,10 +71,11 @@ func createLookupTable() lookupTable {
 	attributes := make(map[kvu]int32)
 	attributes[kvu{}] = 0
 
-	stacks := make(map[uint64]stackinfo)
-	stacks[0] = stackinfo{stackTableIdx: 0}
+	stacks := make(map[uint64]stackInfo)
+	stacks[0] = stackInfo{stackTableIdx: 0}
 
 	return lookupTable{
+		locations:  locations,
 		functions:  functions,
 		strings:    strings,
 		attributes: attributes,
@@ -125,9 +145,42 @@ func (lt *lookupTable) AddStack(locs []int32) int32 {
 		return s.stackTableIdx
 	}
 	idx := int32(len(lt.stacks))
-	lt.stacks[h] = stackinfo{
+	lt.stacks[h] = stackInfo{
 		locationIndices: locs,
 		stackTableIdx:   idx,
+	}
+	return idx
+}
+
+func hashFrame(frame trace.StackFrame) uint64 {
+	hasher := xxh3.New()
+
+	hasher.WriteString(frame.Func)
+	hasher.WriteString(frame.File)
+	pc := unsafe.Slice((*byte)(unsafe.Pointer(&frame.PC)), 8)
+	hasher.Write(pc)
+	line := unsafe.Slice((*byte)(unsafe.Pointer(&frame.Line)), 8)
+	hasher.Write(line)
+
+	return hasher.Sum64()
+}
+
+func (lt *lookupTable) AddLocation(frame trace.StackFrame) int32 {
+	h := hashFrame(frame)
+	if l, exists := lt.locations[h]; exists {
+		return l.locationTableIdx
+	}
+
+	idx := int32(len(lt.locations))
+	lt.locations[h] = locationInfo{
+		address: frame.PC,
+		lines: []line{
+			{
+				functionIdx: lt.AddFunction(frame.Func, "", frame.File, int64(frame.Line)),
+				line:        int64(frame.Line),
+			},
+		},
+		locationTableIdx: idx,
 	}
 	return idx
 }
