@@ -126,7 +126,7 @@ eventLoop:
 		goIDAttr := lt.AddKeyValueUnit("GoID", strconv.Itoa(int(ev.Goroutine())), "")
 		newSample.AttributeIndices().Append(goIDAttr)
 
-		if err := populateSample(lt, profiles.Dictionary(), newSample, ev.Stack(), endTS.UnixNano()); err != nil {
+		if err := populateSample(lt, newSample, ev.Stack(), endTS.UnixNano()); err != nil {
 			return pprofile.Profiles{}, err
 		}
 		addedFrames = true
@@ -152,7 +152,7 @@ func initializeProfile(lt lookupTable, p pprofile.Profile) {
 }
 
 // populateSample converts a single trace.Stack into a pprofile.Sample.
-func populateSample(lt lookupTable, dic pprofile.ProfilesDictionary, s pprofile.Sample, stack trace.Stack, ts int64) error {
+func populateSample(lt lookupTable, s pprofile.Sample, stack trace.Stack, ts int64) error {
 	s.TimestampsUnixNano().Append(uint64(ts))
 
 	var li []int32
