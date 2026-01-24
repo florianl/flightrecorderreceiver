@@ -36,9 +36,6 @@ func convert(ctx context.Context, logger *zap.Logger, f io.Reader) (pprofile.Pro
 	currentScopeProfile.SetSchemaUrl(semconv.SchemaURL)
 	currentProfile := currentScopeProfile.Profiles().AppendEmpty()
 
-	// TODO: move LocationTable to lookupTable
-	profiles.Dictionary().LocationTable().AppendEmpty()
-
 	initializeProfile(lt, currentProfile)
 
 	var baseTime time.Time
@@ -160,15 +157,8 @@ func populateSample(lt lookupTable, dic pprofile.ProfilesDictionary, s pprofile.
 
 	var li []int32
 	for frame := range stack.Frames() {
-		loc := dic.LocationTable().AppendEmpty()
-		li = append(li, int32(dic.LocationTable().Len()-1))
-
-		loc.SetAddress(frame.PC)
-		ln := loc.Lines().AppendEmpty()
-
-		ln.SetLine(int64(frame.Line))
-
-		ln.SetFunctionIndex(lt.AddFunction(frame.Func, "", frame.File, int64(frame.Line)))
+		loc := lt.AddLocation(frame)
+		li = append(li, loc)
 	}
 
 	si := lt.AddStack(li)
@@ -187,6 +177,20 @@ func populateDictionary(lt lookupTable, dic pprofile.ProfilesDictionary) error {
 	// As MappingTable is not initizalied in createLookupTable
 	// create the empty element here.
 	dic.MappingTable().AppendEmpty()
+
+	// locations
+	for range lt.locations {
+		dic.LocationTable().AppendEmpty()
+	}
+	for _, l := range lt.locations {
+		dic.LocationTable().At(int(l.locationTableIdx)).SetAddress(l.address)
+		for _, line := range l.lines {
+			ln := dic.LocationTable().At(int(l.locationTableIdx)).Lines().AppendEmpty()
+			ln.SetFunctionIndex(line.functionIdx)
+			ln.SetLine(line.line)
+			ln.SetColumn(line.column)
+		}
+	}
 
 	// functions
 	for range lt.functions {
