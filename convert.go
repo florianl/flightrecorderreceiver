@@ -2,12 +2,14 @@ package flightrecorderreceiver
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strconv"
 	"time"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pprofile"
+	"go.uber.org/zap"
 	"golang.org/x/exp/trace"
 
 	semconv "go.opentelemetry.io/otel/semconv/v1.38.0"
@@ -18,7 +20,7 @@ import (
 //
 // TODOs:
 //   - deduplicate data
-func convert(ctx context.Context, f io.Reader) (pprofile.Profiles, error) {
+func convert(ctx context.Context, logger *zap.Logger, f io.Reader) (pprofile.Profiles, error) {
 	r, err := trace.NewReader(f)
 	if err != nil {
 		return pprofile.Profiles{}, err
@@ -100,7 +102,7 @@ eventLoop:
 
 			initializeProfile(lt, currentProfile)
 		default:
-			// TODO: Log skipped event kind
+			logger.Debug(fmt.Sprintf("Skipping event kind %s", ev.Kind().String()))
 			continue
 		}
 
