@@ -32,16 +32,15 @@ func convert(ctx context.Context, logger *zap.Logger, f io.Reader) (pprofile.Pro
 	currentResourceProfile := rpSlice.AppendEmpty()
 	currentResourceProfile.SetSchemaUrl(semconv.SchemaURL)
 	spSlice := currentResourceProfile.ScopeProfiles()
-	currentScopeProfile := spSlice.AppendEmpty()
-	currentScopeProfile.SetSchemaUrl(semconv.SchemaURL)
-	currentProfile := currentScopeProfile.Profiles().AppendEmpty()
 
-	initializeProfile(lt, currentProfile)
+	// most recent clock information from sync events
+	var clockSnap *trace.ClockSnapshot
+	// startTS keeps track of the start time of a range
+	var startTS time.Time
 
-	var baseTime time.Time
-	var baseMono uint64
-
-	startTS, endTS := time.Unix(0, 0), time.Unix(0, 0)
+	// currentXYZ keeps track of the current scope
+	var currentScopeProfile pprofile.ScopeProfiles
+	var currentProfile pprofile.Profile
 	addedFrames := false
 
 eventLoop:
@@ -63,52 +62,53 @@ eventLoop:
 		case trace.EventSync:
 			s := ev.Sync()
 			if s.ClockSnapshot != nil {
-				baseTime = s.ClockSnapshot.Wall
-				baseMono = s.ClockSnapshot.Mono
-				startTS = baseTime
+				clockSnap = s.ClockSnapshot
 			}
-			continue
+			continue eventLoop
 		case trace.EventMetric:
 			// Skip these events for the moment.
 			// TODO: Figure out if and how these can be reported
-			continue
+			continue eventLoop
 		case trace.EventLabel, trace.EventExperimental:
 			// Skip these events for the moment.
 			// TODO: Figure out if and how these can be represented in OTel Profiles
-			continue
-		case trace.EventStateTransition:
-		case trace.EventRangeBegin, trace.EventRangeEnd:
+			continue eventLoop
+		case trace.EventRangeBegin:
+			if clockSnap == nil {
+				logger.Error("received EventRangeBegin before clock synchonization")
+				continue eventLoop
+			}
+			startTS = eventWallTime(ev.Time(), clockSnap)
+
+			// Use a dedicated ScopeProfile per EventRange
+			currentScopeProfile = spSlice.AppendEmpty()
+			currentProfile = currentScopeProfile.Profiles().AppendEmpty()
+			currentScopeProfile.SetSchemaUrl(semconv.SchemaURL)
+
+			initializeProfile(lt, currentProfile)
+		case trace.EventRangeEnd:
 			if !addedFrames {
 				// Do not generated data with empty profiles
-				continue
+				continue eventLoop
 			}
 			addedFrames = false
 
 			if startTS.IsZero() {
-				// No stack was recorded so far.
-				continue
+				logger.Error("received EventRangeEnd before EventRangeBegin")
+				continue eventLoop
 			}
 			currentProfile.SetTime(pcommon.NewTimestampFromTime(startTS))
+			endTS := eventWallTime(ev.Time(), clockSnap)
 			duration := endTS.Sub(startTS).Nanoseconds()
 			currentProfile.SetDurationNano(uint64(duration))
-
-			// Use a dedicated ScopeProfile per EventRange
-			startTS = baseTime
-			currentScopeProfile = spSlice.AppendEmpty()
-			currentProfile = currentScopeProfile.Profiles().AppendEmpty()
-
-			initializeProfile(lt, currentProfile)
+		case trace.EventStateTransition:
+			// Just unwind the stack
 		default:
 			logger.Debug(fmt.Sprintf("Skipping event kind %s", ev.Kind().String()))
-			continue
+			continue eventLoop
 		}
 
-		if ev.Kind() == trace.EventRangeBegin || ev.Kind() == trace.EventRangeEnd {
-			// Skip stack unwinding for EventRagen[Begin|End]
-			continue
-		}
-
-		endTS = convertTimestamp(baseTime, baseMono, ev.Time())
+		wallclockTS := eventWallTime(ev.Time(), clockSnap)
 
 		eventHasFrames := false
 		for range ev.Stack().Frames() {
@@ -126,15 +126,11 @@ eventLoop:
 		goIDAttr := lt.AddKeyValueUnit("GoID", strconv.Itoa(int(ev.Goroutine())), "")
 		newSample.AttributeIndices().Append(goIDAttr)
 
-		if err := populateSample(lt, newSample, ev.Stack(), endTS.UnixNano()); err != nil {
+		if err := populateSample(lt, newSample, ev.Stack(), wallclockTS.UnixNano()); err != nil {
 			return pprofile.Profiles{}, err
 		}
 		addedFrames = true
 	}
-
-	currentProfile.SetTime(pcommon.NewTimestampFromTime(startTS))
-	duration := endTS.Sub(startTS).Nanoseconds()
-	currentProfile.SetDurationNano(uint64(duration))
 
 	if err := populateDictionary(lt, profiles.Dictionary()); err != nil {
 		return pprofile.Profiles{}, err
@@ -147,7 +143,6 @@ eventLoop:
 func initializeProfile(lt lookupTable, p pprofile.Profile) {
 	// Report the flightrecord as wallclock profile.
 	p.SampleType().SetTypeStrindex(lt.AddString("wall"))
-
 	p.SampleType().SetUnitStrindex(lt.AddString("nanoseconds"))
 }
 
@@ -167,9 +162,11 @@ func populateSample(lt lookupTable, s pprofile.Sample, stack trace.Stack, ts int
 	return nil
 }
 
-func convertTimestamp(base time.Time, baseMono uint64, ts trace.Time) time.Time {
-	diff := uint64(ts) - baseMono
-	return base.Add(time.Duration(diff))
+// eventWallTime calculates the absolute time.Time for a given event based
+// on a reference trace.ClockSnapshot.
+func eventWallTime(evTime trace.Time, snap *trace.ClockSnapshot) time.Time {
+	diff := time.Duration(evTime - snap.Trace)
+	return snap.Wall.Add(diff)
 }
 
 func populateDictionary(lt lookupTable, dic pprofile.ProfilesDictionary) error {
