@@ -4,13 +4,11 @@ import (
 	"context"
 
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/consumer/xconsumer"
 	"go.opentelemetry.io/collector/receiver"
 	"go.opentelemetry.io/collector/receiver/xreceiver"
-	"go.opentelemetry.io/collector/scraper"
 	"go.opentelemetry.io/collector/scraper/scraperhelper"
-	"go.opentelemetry.io/collector/scraper/scraperhelper/xscraperhelper"
-	"go.opentelemetry.io/collector/scraper/xscraper"
 )
 
 var compType = component.MustNewType("flightrecorder")
@@ -20,6 +18,7 @@ func NewFactory() receiver.Factory {
 		compType,
 		createDefaultConfig,
 		xreceiver.WithProfiles(createProfilesReceiver, component.StabilityLevelDevelopment),
+		xreceiver.WithMetrics(createMetricsReceiver, component.StabilityLevelDevelopment),
 	)
 }
 
@@ -35,26 +34,26 @@ func createProfilesReceiver(
 	cfg component.Config,
 	consumer xconsumer.Profiles,
 ) (xreceiver.Profiles, error) {
-	fileStatsConfig := cfg.(*Config)
+	c := cfg.(*Config)
 
-	mp := newScraper(fileStatsConfig, settings)
-	s, err := xscraper.NewProfiles(mp.scrape)
-	if err != nil {
-		return nil, err
-	}
+	// Get or create the shared receiver instance
+	rcv := c.getOrCreateReceiver(settings.TelemetrySettings)
+	rcv.profilesConsumer = consumer
 
-	opt := xscraperhelper.AddFactoryWithConfig(
-		xscraper.NewFactory(compType, nil,
-			xscraper.WithProfiles(
-				func(context.Context, scraper.Settings, component.Config) (xscraper.Profiles, error) {
-					return s, nil
-				}, component.StabilityLevelDevelopment)),
-		nil)
+	return rcv, nil
+}
 
-	return xscraperhelper.NewProfilesController(
-		&fileStatsConfig.ControllerConfig,
-		settings,
-		consumer,
-		opt,
-	)
+func createMetricsReceiver(
+	_ context.Context,
+	settings receiver.Settings,
+	cfg component.Config,
+	consumer consumer.Metrics,
+) (receiver.Metrics, error) {
+	c := cfg.(*Config)
+
+	// Get or create the shared receiver instance
+	rcv := c.getOrCreateReceiver(settings.TelemetrySettings)
+	rcv.metricsConsumer = consumer
+
+	return rcv, nil
 }
