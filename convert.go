@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pprofile"
 	"go.uber.org/zap"
 	"golang.org/x/exp/trace"
@@ -15,15 +17,44 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.38.0"
 )
 
+// mapMetricName maps a flight recorder metric name to OpenTelemetry like metric names,
+// as for these metrics there are no semantic conventions yet.
+func mapMetricName(traceName string) string {
+	// Remove leading slash and extract base name
+	name := strings.TrimPrefix(traceName, "/")
+
+	// Map known metric names to OTel conventions
+	switch name {
+	case "sched/gomaxprocs:threads":
+		return "process.runtime.go.maxprocs"
+	case "memory/classes/heap/objects:bytes":
+		return "runtime.go.mem.heap_objects"
+	case "gc/heap/goal:bytes":
+		return "runtime.go.gc.heap_goal"
+	default:
+		// For unknown metrics, replace slashes with dots and remove unit suffix
+		if idx := strings.LastIndex(name, ":"); idx != -1 {
+			name = name[:idx]
+		}
+		return strings.ReplaceAll(name, "/", ".")
+	}
+}
+
+// extractMetricUnit extracts the unit from a flight recorder metric name.
+func extractMetricUnit(traceName string) string {
+	// Extract unit from the format "path/name:unit"
+	if idx := strings.LastIndex(traceName, ":"); idx != -1 {
+		return traceName[idx+1:]
+	}
+	return ""
+}
+
 // convert converts a Flight Recorder trace from the provided reader into
-// an OpenTelemetry Profiles data structure.
-//
-// TODOs:
-//   - deduplicate data
-func convert(ctx context.Context, logger *zap.Logger, f io.Reader) (pprofile.Profiles, error) {
+// both OpenTelemetry Profiles and Metrics data structures.
+func convert(ctx context.Context, logger *zap.Logger, f io.Reader) (pprofile.Profiles, pmetric.Metrics, error) {
 	r, err := trace.NewReader(f)
 	if err != nil {
-		return pprofile.Profiles{}, err
+		return pprofile.Profiles{}, pmetric.Metrics{}, err
 	}
 	lt := createLookupTable()
 
@@ -32,6 +63,15 @@ func convert(ctx context.Context, logger *zap.Logger, f io.Reader) (pprofile.Pro
 	currentResourceProfile := rpSlice.AppendEmpty()
 	currentResourceProfile.SetSchemaUrl(semconv.SchemaURL)
 	spSlice := currentResourceProfile.ScopeProfiles()
+
+	metrics := pmetric.NewMetrics()
+	rmSlice := metrics.ResourceMetrics()
+	currentResourceMetric := rmSlice.AppendEmpty()
+	currentResourceMetric.SetSchemaUrl(semconv.SchemaURL)
+	smSlice := currentResourceMetric.ScopeMetrics()
+	currentScopeMetric := smSlice.AppendEmpty()
+	currentScopeMetric.SetSchemaUrl(semconv.SchemaURL)
+	metricsMap := make(map[string]pmetric.Metric)
 
 	// most recent clock information from sync events
 	var clockSnap *trace.ClockSnapshot
@@ -56,7 +96,7 @@ eventLoop:
 			if err == io.EOF {
 				break
 			}
-			return pprofile.Profiles{}, err
+			return pprofile.Profiles{}, pmetric.Metrics{}, err
 		}
 		switch ev.Kind() {
 		case trace.EventSync:
@@ -66,8 +106,32 @@ eventLoop:
 			}
 			continue eventLoop
 		case trace.EventMetric:
-			// Skip these events for the moment.
-			// TODO: Figure out if and how these can be reported
+			// Extract metrics from the event
+			if clockSnap == nil {
+				logger.Error("received EventMetric before clock synchronization")
+				continue eventLoop
+			}
+
+			m := ev.Metric()
+			metricName := mapMetricName(m.Name)
+			metricUnit := extractMetricUnit(m.Name)
+
+			// Get or create metric
+			metric, exists := metricsMap[metricName]
+			if !exists {
+				metric = currentScopeMetric.Metrics().AppendEmpty()
+				metric.SetName(metricName)
+				metric.SetUnit(metricUnit)
+				metric.SetEmptyGauge()
+				metricsMap[metricName] = metric
+			}
+
+			// Add data point
+			dp := metric.Gauge().DataPoints().AppendEmpty()
+			dp.SetTimestamp(pcommon.NewTimestampFromTime(eventWallTime(ev.Time(), clockSnap)))
+			// Flight recorder metrics are uint64 values
+			dp.SetDoubleValue(float64(m.Value.Uint64()))
+
 			continue eventLoop
 		case trace.EventLabel, trace.EventExperimental:
 			// Skip these events for the moment.
@@ -127,16 +191,16 @@ eventLoop:
 		newSample.AttributeIndices().Append(goIDAttr)
 
 		if err := populateSample(lt, newSample, ev.Stack(), wallclockTS.UnixNano()); err != nil {
-			return pprofile.Profiles{}, err
+			return pprofile.Profiles{}, pmetric.Metrics{}, err
 		}
 		addedFrames = true
 	}
 
 	if err := populateDictionary(lt, profiles.Dictionary()); err != nil {
-		return pprofile.Profiles{}, err
+		return pprofile.Profiles{}, pmetric.Metrics{}, err
 	}
 
-	return profiles, nil
+	return profiles, metrics, nil
 }
 
 // initializeProfile sets default values for Profile.

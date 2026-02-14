@@ -79,9 +79,18 @@ func TestConvert(t *testing.T) {
 
 	logger := zap.NewNop()
 
-	p, err := convert(t.Context(), logger, f)
+	p, m, err := convert(t.Context(), logger, f)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	// Verify both profiles and metrics were extracted
+	if p.ResourceProfiles().Len() == 0 {
+		t.Fatal("expected profiles to be extracted")
+	}
+
+	if m.ResourceMetrics().Len() > 0 {
+		t.Logf("Extracted %d metrics", m.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().Len())
 	}
 
 	// Log the converted profiles for visual inspection
@@ -116,6 +125,17 @@ func TestConvert(t *testing.T) {
 					}
 					t.Logf("")
 				}
+			}
+		}
+	}
+	t.Logf("")
+	// Log the converted metrics for visual inspection
+	for _, rp := range m.ResourceMetrics().All() {
+		for _, sp := range rp.ScopeMetrics().All() {
+			for i := 0; i < sp.Metrics().Len(); i++ {
+				m := sp.Metrics().At(i)
+				t.Logf("  Metric: %s (unit: %s, data points: %d)",
+					m.Name(), m.Unit(), m.Gauge().DataPoints().Len())
 			}
 		}
 	}
