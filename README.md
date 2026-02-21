@@ -30,4 +30,8 @@ service:
 
 ### Note
 
-This receiver does not replace specialized tools like [gotraceui](https://gotraceui.dev/), as the transformation from the format of [trace.FlightRecorder](https://pkg.go.dev/golang.org/x/exp/trace#FlightRecorder) to [OpenTelemetry Profiles](https://opentelemetry.io/docs/specs/otel/profiles/) is **NOT** lossless. For that reason, metrics in the [trace.FlightRecorder](https://pkg.go.dev/golang.org/x/exp/trace#FlightRecorder) can not be represented by [OpenTelemetry Profiles](https://opentelemetry.io/docs/specs/otel/profiles/).
+This receiver does not replace specialized tools like [gotraceui](https://gotraceui.dev/), as the transformation from the format of [trace.FlightRecorder](https://pkg.go.dev/golang.org/x/exp/trace#FlightRecorder) to [OpenTelemetry Profiles](https://opentelemetry.io/docs/specs/otel/profiles/) is **NOT** lossless.
+
+## Donation
+
+There is a donation proposal for this component with https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/46089.
