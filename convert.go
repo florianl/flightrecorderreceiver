@@ -14,39 +14,15 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/exp/trace"
 
-	semconv "go.opentelemetry.io/otel/semconv/v1.38.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.39.0"
 )
 
-// mapMetricName maps a flight recorder metric name to OpenTelemetry like metric names,
-// as for these metrics there are no semantic conventions yet.
-func mapMetricName(traceName string) string {
-	// Remove leading slash and extract base name
-	name := strings.TrimPrefix(traceName, "/")
-
-	// Map known metric names to OTel conventions
-	switch name {
-	case "sched/gomaxprocs:threads":
-		return "process.runtime.go.maxprocs"
-	case "memory/classes/heap/objects:bytes":
-		return "runtime.go.mem.heap_objects"
-	case "gc/heap/goal:bytes":
-		return "runtime.go.gc.heap_goal"
-	default:
-		// For unknown metrics, replace slashes with dots and remove unit suffix
-		if idx := strings.LastIndex(name, ":"); idx != -1 {
-			name = name[:idx]
-		}
-		return strings.ReplaceAll(name, "/", ".")
-	}
-}
-
-// extractMetricUnit extracts the unit from a flight recorder metric name.
-func extractMetricUnit(traceName string) string {
-	// Extract unit from the format "path/name:unit"
-	if idx := strings.LastIndex(traceName, ":"); idx != -1 {
-		return traceName[idx+1:]
-	}
-	return ""
+// extractMetricNameUnit extracts the name and unit from a flight recorder metric name.
+// There is no 1:1 mapping between runtime/metrics and OTels semconv. Therefore,
+// keep the naming of runtime/metrics.
+func extractMetricNameUnit(traceName string) (name, unit string) {
+	name, unit, _ = strings.Cut(traceName, ":")
+	return name, unit
 }
 
 // convert converts a Flight Recorder trace from the provided reader into
@@ -113,8 +89,7 @@ eventLoop:
 			}
 
 			m := ev.Metric()
-			metricName := mapMetricName(m.Name)
-			metricUnit := extractMetricUnit(m.Name)
+			metricName, metricUnit := extractMetricNameUnit(m.Name)
 
 			// Get or create metric
 			metric, exists := metricsMap[metricName]
