@@ -126,11 +126,11 @@ func TestConvert(t *testing.T) {
 
 		err = (profcheck.ConformanceChecker{
 			CheckDictionaryDuplicates: true,
-			CheckSampleTimestampShape: true}).Check(&data)
+			CheckSampleTimestampShape: true,
+		}).Check(&data)
 		if err != nil {
 			t.Fatalf("conformance check failed: %v", err)
 		}
-
 	})
 	t.Run("Visual inspection", func(t *testing.T) {
 		// Log the converted profiles for visual inspection
