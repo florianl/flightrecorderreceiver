@@ -55,6 +55,7 @@ func convert(ctx context.Context, logger *zap.Logger, f io.Reader) (pprofile.Pro
 	// rangeState tracks an in-progress range for a single goroutine.
 	type rangeState struct {
 		startTS     time.Time
+		lastEventTS time.Time
 		profile     pprofile.Profile
 		initialized bool // true once at least one sample has been added
 	}
@@ -119,6 +120,13 @@ eventLoop:
 				logger.Error("received EventRangeBegin before clock synchonization")
 				continue eventLoop
 			}
+			// Finalize any previously initialized state for this goroutine before
+			// replacing it; otherwise its profile would remain at time=0, duration=0.
+			if existing, ok := activeRanges[ev.Goroutine()]; ok && existing.initialized {
+				beginTS := eventWallTime(ev.Time(), clockSnap)
+				existing.profile.SetTime(pcommon.NewTimestampFromTime(existing.startTS))
+				existing.profile.SetDurationNano(uint64(beginTS.Sub(existing.startTS).Nanoseconds()) + 1)
+			}
 			activeRanges[ev.Goroutine()] = &rangeState{
 				startTS: eventWallTime(ev.Time(), clockSnap),
 			}
@@ -137,22 +145,16 @@ eventLoop:
 			}
 			endTS := eventWallTime(ev.Time(), clockSnap)
 			state.profile.SetTime(pcommon.NewTimestampFromTime(state.startTS))
-			state.profile.SetDurationNano(uint64(endTS.Sub(state.startTS).Nanoseconds()))
-			// Do NOT fall through: endTS is the exclusive range boundary.
+			// Use +1 so the half-open range [startTS, endTS+1) includes any sample
+			// that lands at exactly endTS (state transitions can share a timestamp
+			// with the range-end event).
+			state.profile.SetDurationNano(uint64(endTS.Sub(state.startTS).Nanoseconds()) + 1)
 			continue eventLoop
 		case trace.EventStateTransition:
 			// Just unwind the stack — fall through to add a sample.
 		default:
 			logger.Debug(fmt.Sprintf("Skipping event kind %s", ev.Kind().String()))
 			continue eventLoop
-		}
-
-		// EventRangeBegin and EventStateTransition fall through to here.
-		goID := ev.Goroutine()
-		state, ok := activeRanges[goID]
-		if !ok {
-			// Not within an active range; skip.
-			continue
 		}
 
 		eventHasFrames := false
@@ -165,6 +167,17 @@ eventLoop:
 			continue
 		}
 
+		// EventRangeBegin and EventStateTransition fall through to here.
+		goID := ev.Goroutine()
+		state, ok := activeRanges[goID]
+		if !ok {
+			state = &rangeState{
+				startTS: eventWallTime(ev.Time(), clockSnap),
+			}
+			activeRanges[ev.Goroutine()] = state
+			logger.Warn(fmt.Sprintf("Received event for GoID %v without prior EventRangeStart", goID))
+		}
+
 		if !state.initialized {
 			// Lazily create the ScopeProfile and Profile on the first sample.
 			sp := spSlice.AppendEmpty()
@@ -175,6 +188,7 @@ eventLoop:
 		}
 
 		wallclockTS := eventWallTime(ev.Time(), clockSnap)
+		state.lastEventTS = wallclockTS
 		newSample := state.profile.Samples().AppendEmpty()
 
 		// GoID is not part of OTel SemConv - so hardcode it here.
@@ -188,6 +202,17 @@ eventLoop:
 
 	if err := populateDictionary(lt, profiles.Dictionary()); err != nil {
 		return pprofile.Profiles{}, pmetric.Metrics{}, err
+	}
+
+	// Dump remaining events that were missing proper EventRangeBegin and EventRangeEnd.
+	for _, state := range activeRanges {
+		if !state.initialized {
+			continue
+		}
+		state.profile.SetTime(pcommon.NewTimestampFromTime(state.startTS))
+		// Use +1 so the half-open range [startTS, lastEventTS+1) includes the
+		// last sample, which is at lastEventTS.
+		state.profile.SetDurationNano(uint64(state.lastEventTS.Sub(state.startTS).Nanoseconds()) + 1)
 	}
 
 	return profiles, metrics, nil
