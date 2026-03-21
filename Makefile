@@ -1,4 +1,4 @@
-.PHONY: build clean fmt lint test
+.PHONY: build clean fmt lint test vulncheck
 
 build:
 	go build
@@ -14,3 +14,6 @@ lint:
 
 test:
 	go test ./...
+
+vulncheck:
+	go tool govulncheck ./...
