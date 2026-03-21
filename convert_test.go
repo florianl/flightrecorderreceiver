@@ -8,7 +8,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/open-telemetry/sig-profiling/tools/profcheck"
+	"go.opentelemetry.io/collector/pdata/pprofile/pprofileotlp"
+	v1profiles "go.opentelemetry.io/proto/otlp/profiles/v1development"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 )
 
 func primeFactors(t *testing.T, n int) []int {
@@ -93,50 +97,87 @@ func TestConvert(t *testing.T) {
 		t.Logf("Extracted %d metrics", m.ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().Len())
 	}
 
-	// Log the converted profiles for visual inspection
-	for _, rp := range p.ResourceProfiles().All() {
-		t.Logf("ResourceProfile: %+v\n", rp)
-		for _, sp := range rp.ScopeProfiles().All() {
-			t.Logf("  ScopeProfile: %+v\n", sp)
-			for _, prof := range sp.Profiles().All() {
-				t.Logf("    Profile:\n")
-				t.Logf("      Timestamp : %s\n", prof.Time().String())
-				t.Logf("      Duration: %d ns\n", prof.DurationNano())
-				for _, sample := range prof.Samples().All() {
-					t.Logf("      Sample:\n")
-					var tsStr string
-					for _, ts := range sample.TimestampsUnixNano().All() {
-						if tsStr != "" {
-							tsStr += ", "
+	t.Run("ConformanceChecker", func(t *testing.T) {
+		// We can not directly use ConformanceChecker on profiles,
+		// so we first need to marshal and unmarshal the data
+		// for the expected format.
+
+		req := pprofileotlp.NewExportRequestFromProfiles(p)
+		contents, err := req.MarshalProto()
+		if err != nil {
+			t.Fatalf("failed to marshal data: %v", err)
+		}
+
+		var data v1profiles.ProfilesData
+		err = proto.Unmarshal(contents, &data)
+		if err != nil {
+			t.Fatalf("failed to unmarshal data: %v", err)
+		}
+
+		// Fix for protobuf unmarshaling for ConformanceChecker: The first attribute
+		// table entry must have a nil Value,but protobuf unmarshaling creates a
+		// non-nil but empty AnyValue. Explicitly set it to nil.
+		if data.Dictionary != nil && len(data.Dictionary.AttributeTable) > 0 {
+			firstAttr := data.Dictionary.AttributeTable[0]
+			if firstAttr.KeyStrindex == 0 && firstAttr.UnitStrindex == 0 {
+				firstAttr.Value = nil
+			}
+		}
+
+		err = (profcheck.ConformanceChecker{
+			CheckDictionaryDuplicates: true,
+			CheckSampleTimestampShape: true,
+		}).Check(&data)
+		if err != nil {
+			t.Fatalf("conformance check failed: %v", err)
+		}
+	})
+	t.Run("Visual inspection", func(t *testing.T) {
+		// Log the converted profiles for visual inspection
+		for _, rp := range p.ResourceProfiles().All() {
+			t.Logf("ResourceProfile: %+v\n", rp)
+			for _, sp := range rp.ScopeProfiles().All() {
+				t.Logf("  ScopeProfile: %+v\n", sp)
+				for _, prof := range sp.Profiles().All() {
+					t.Logf("    Profile:\n")
+					t.Logf("      Timestamp : %s\n", prof.Time().String())
+					t.Logf("      Duration: %d ns\n", prof.DurationNano())
+					for _, sample := range prof.Samples().All() {
+						t.Logf("      Sample:\n")
+						var tsStr string
+						for _, ts := range sample.TimestampsUnixNano().All() {
+							if tsStr != "" {
+								tsStr += ", "
+							}
+							tsStr += time.Unix(0, int64(ts)).String()
 						}
-						tsStr += time.Unix(0, int64(ts)).String()
-					}
-					t.Logf("        Timestamps: [%s]\n", tsStr)
-					t.Logf("        Values: %v\n", sample.Values().AsRaw())
-					for _, li := range p.Dictionary().StackTable().At(int(sample.StackIndex())).LocationIndices().All() {
-						loc := p.Dictionary().LocationTable().At(int(li))
-						t.Logf("        Location: 0x%x\n", loc.Address())
-						for _, ln := range loc.Lines().All() {
-							fn := p.Dictionary().FunctionTable().At(int(ln.FunctionIndex()))
-							funcName := p.Dictionary().StringTable().At(int(fn.NameStrindex()))
-							fileName := p.Dictionary().StringTable().At(int(fn.FilenameStrindex()))
-							t.Logf("          Line: %d, Function: %s, Filename: %s\n", ln.Line(), funcName, fileName)
+						t.Logf("        Timestamps: [%s]\n", tsStr)
+						t.Logf("        Values: %v\n", sample.Values().AsRaw())
+						for _, li := range p.Dictionary().StackTable().At(int(sample.StackIndex())).LocationIndices().All() {
+							loc := p.Dictionary().LocationTable().At(int(li))
+							t.Logf("        Location: 0x%x\n", loc.Address())
+							for _, ln := range loc.Lines().All() {
+								fn := p.Dictionary().FunctionTable().At(int(ln.FunctionIndex()))
+								funcName := p.Dictionary().StringTable().At(int(fn.NameStrindex()))
+								fileName := p.Dictionary().StringTable().At(int(fn.FilenameStrindex()))
+								t.Logf("          Line: %d, Function: %s, Filename: %s\n", ln.Line(), funcName, fileName)
+							}
 						}
+						t.Logf("")
 					}
-					t.Logf("")
 				}
 			}
 		}
-	}
-	t.Logf("")
-	// Log the converted metrics for visual inspection
-	for _, rp := range m.ResourceMetrics().All() {
-		for _, sp := range rp.ScopeMetrics().All() {
-			for i := 0; i < sp.Metrics().Len(); i++ {
-				m := sp.Metrics().At(i)
-				t.Logf("  Metric: %s (unit: %s, data points: %d)",
-					m.Name(), m.Unit(), m.Gauge().DataPoints().Len())
+		t.Logf("")
+		// Log the converted metrics for visual inspection
+		for _, rp := range m.ResourceMetrics().All() {
+			for _, sp := range rp.ScopeMetrics().All() {
+				for i := 0; i < sp.Metrics().Len(); i++ {
+					m := sp.Metrics().At(i)
+					t.Logf("  Metric: %s (unit: %s, data points: %d)",
+						m.Name(), m.Unit(), m.Gauge().DataPoints().Len())
+				}
 			}
 		}
-	}
+	})
 }
