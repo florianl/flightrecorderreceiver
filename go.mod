@@ -3,7 +3,7 @@ module github.com/florianl/flightrecorderreceiver
 go 1.25.0
 
 require (
-	github.com/bmatcuk/doublestar/v4 v4.9.2
+	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/zeebo/xxh3 v1.0.2
 	go.opentelemetry.io/collector/component v1.54.0
 	go.opentelemetry.io/collector/consumer v1.54.0
