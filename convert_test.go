@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/open-telemetry/sig-profiling/tools/profcheck"
+	"github.com/open-telemetry/sig-profiling/profcheck"
 	"go.opentelemetry.io/collector/pdata/pprofile/pprofileotlp"
 	v1profiles "go.opentelemetry.io/proto/otlp/profiles/v1development"
 	"go.uber.org/zap"
