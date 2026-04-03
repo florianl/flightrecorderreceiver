@@ -151,6 +151,10 @@ eventLoop:
 			state.profile.SetDurationNano(uint64(endTS.Sub(state.startTS).Nanoseconds()) + 1)
 			continue eventLoop
 		case trace.EventStateTransition:
+			if clockSnap == nil {
+				logger.Error("received EventStateTransition before clock synchonization")
+				continue eventLoop
+			}
 			// Just unwind the stack — fall through to add a sample.
 		default:
 			logger.Debug(fmt.Sprintf("Skipping event kind %s", ev.Kind().String()))
@@ -175,7 +179,7 @@ eventLoop:
 				startTS: eventWallTime(ev.Time(), clockSnap),
 			}
 			activeRanges[ev.Goroutine()] = state
-			logger.Warn(fmt.Sprintf("Received event for GoID %v without prior EventRangeStart", goID))
+			logger.Warn(fmt.Sprintf("Received event for GoID %v without prior EventRangeBegin", goID))
 		}
 
 		if !state.initialized {
