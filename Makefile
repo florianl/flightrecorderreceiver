@@ -1,4 +1,4 @@
-.PHONY: build clean fmt lint test vulncheck
+.PHONY: build clean fmt lint test vulncheck mdatagen
 
 build:
 	go build
@@ -17,3 +17,6 @@ test:
 
 vulncheck:
 	go tool govulncheck ./...
+
+mdatagen:
+	go tool mdatagen metadata.yaml
