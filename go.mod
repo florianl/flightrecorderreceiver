@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
-	github.com/open-telemetry/sig-profiling/profcheck v0.0.0-20260416173450-2addcd15bcf9
+	github.com/open-telemetry/sig-profiling/profcheck v0.0.0-20260422152846-dd95db7b8093
 	github.com/stretchr/testify v1.11.1
 	github.com/zeebo/xxh3 v1.1.0
 	go.opentelemetry.io/collector/component v1.56.0
