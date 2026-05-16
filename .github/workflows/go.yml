@@ -27,8 +27,8 @@ jobs:
       - name: test
         run: |
           make test
-  lint:
-    name: lint
+  code-base:
+    name: code base
     runs-on: ubuntu-24.04
     steps:
       - name: Clone code
@@ -41,3 +41,6 @@ jobs:
       - name: lint
         run: |
           make lint
+      - name: vulncheck
+        run: |
+          make vulncheck
