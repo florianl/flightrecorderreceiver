@@ -41,6 +41,9 @@ jobs:
       - name: lint
         run: |
           make lint
+      - name: fmt
+        run: |
+          make fmt
       - name: vulncheck
         run: |
           make vulncheck
