@@ -10,10 +10,10 @@ require (
 	go.opentelemetry.io/collector/component v1.59.0
 	go.opentelemetry.io/collector/component/componenttest v0.153.0
 	go.opentelemetry.io/collector/confmap v1.59.0
-	go.opentelemetry.io/collector/consumer v1.59.0
+	go.opentelemetry.io/collector/consumer v1.60.0
 	go.opentelemetry.io/collector/consumer/consumertest v0.153.0
 	go.opentelemetry.io/collector/consumer/xconsumer v0.153.0
-	go.opentelemetry.io/collector/pdata v1.59.0
+	go.opentelemetry.io/collector/pdata v1.60.0
 	go.opentelemetry.io/collector/pdata/pprofile v0.153.0
 	go.opentelemetry.io/collector/receiver v1.59.0
 	go.opentelemetry.io/collector/receiver/receivertest v0.153.0
@@ -55,7 +55,7 @@ require (
 	go.opentelemetry.io/collector/cmd/mdatagen v0.149.0 // indirect
 	go.opentelemetry.io/collector/confmap/provider/fileprovider v1.55.0 // indirect
 	go.opentelemetry.io/collector/consumer/consumererror v0.153.0 // indirect
-	go.opentelemetry.io/collector/featuregate v1.59.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.60.0 // indirect
 	go.opentelemetry.io/collector/filter v0.149.0 // indirect
 	go.opentelemetry.io/collector/internal/componentalias v0.153.0 // indirect
 	go.opentelemetry.io/collector/pipeline v1.59.0 // indirect
