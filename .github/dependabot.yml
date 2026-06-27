@@ -9,3 +9,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      otel-collector:
+        patterns:
+          - "go.opentelemetry.io/collector/*"
