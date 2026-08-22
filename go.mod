@@ -1,6 +1,6 @@
 module github.com/florianl/flightrecorderreceiver
 
-go 1.25.13
+go 1.26.7
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
