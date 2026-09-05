@@ -127,6 +127,7 @@ func TestConvert(t *testing.T) {
 		err = (profcheck.ConformanceChecker{
 			CheckDictionaryDuplicates: true,
 			CheckSampleTimestampShape: true,
+			CheckDictionaryOrphans:    true,
 		}).Check(&data)
 		if err != nil {
 			t.Fatalf("conformance check failed: %v", err)
