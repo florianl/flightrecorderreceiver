@@ -3,7 +3,7 @@ module github.com/florianl/flightrecorderreceiver
 go 1.26.7
 
 require (
-	github.com/bmatcuk/doublestar/v4 v4.10.0
+	github.com/bmatcuk/doublestar/v4 v4.10.2
 	github.com/open-telemetry/sig-profiling/profcheck v0.0.0-20260903071220-e05703c9b676
 	github.com/stretchr/testify v1.12.1
 	github.com/zeebo/xxh3 v1.1.0
